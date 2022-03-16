@@ -358,6 +358,67 @@ func TestPatchSparkPod_Affinity(t *testing.T) {
 		modifiedPod.Spec.Affinity.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution[0].TopologyKey)
 }
 
+func TestPatchSparkPod_WeightedAffinities(t *testing.T) {
+	app := &v1beta2.SparkApplication{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "spark-test",
+			UID:  "spark-test-1",
+		},
+		Spec: v1beta2.SparkApplicationSpec{
+			Driver: v1beta2.DriverSpec{
+				SparkPodSpec: v1beta2.SparkPodSpec{},
+			},
+			WeightedAffinities: map[string]float64{
+				"on-demand-instance": 0.50,
+				"spot-instance":      0.50,
+			},
+		},
+	}
+
+	executorPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "spark-executor",
+			Labels: map[string]string{
+				config.SparkRoleLabel:               config.SparkExecutorRole,
+				config.LaunchedBySparkOperatorLabel: "true",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:  config.SparkExecutorContainerName,
+					Image: "spark-executor:latest",
+				},
+			},
+		},
+	}
+
+	// Test patching a pod with a pod Affinity.
+	modifiedPod, err := getModifiedPod(executorPod, app)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// be sure affinity is set
+	assert.True(t, modifiedPod.Spec.Affinity != nil)
+	assert.True(t, modifiedPod.Spec.Affinity.NodeAffinity != nil) // PreferredDuringSchedulingIgnoredDuringExecution
+	assert.True(t, modifiedPod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution != nil)
+	assert.True(t, len(modifiedPod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution) == 1)
+
+	// be sure the affinity labels are set the way we want
+	schedulingTerm := modifiedPod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution[0]
+	assert.True(t, schedulingTerm.Preference.MatchExpressions != nil)
+	matchExpressions := schedulingTerm.Preference.MatchExpressions
+	assert.True(t, len(matchExpressions) == 1)
+	nodeSelectorRequirements := matchExpressions[0]
+
+	// check the matching expression for our affinity
+	assert.True(t, nodeSelectorRequirements.Key == "role")
+	assert.True(t, nodeSelectorRequirements.Operator == corev1.NodeSelectorOpIn)
+	assert.True(t, len(nodeSelectorRequirements.Values) == 1)
+	assert.Contains(t, []string{"on-demand-instance", "spot-instance"}, nodeSelectorRequirements.Values[0])
+}
+
 func TestPatchSparkPod_ConfigMaps(t *testing.T) {
 	app := &v1beta2.SparkApplication{
 		ObjectMeta: metav1.ObjectMeta{

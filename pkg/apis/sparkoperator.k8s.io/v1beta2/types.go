@@ -240,6 +240,9 @@ type SparkApplicationSpec struct {
 	Deps Dependencies `json:"deps,omitempty"`
 	// RestartPolicy defines the policy on if and in which conditions the controller should restart an application.
 	RestartPolicy RestartPolicy `json:"restartPolicy,omitempty"`
+	// WeightedAffinities contains the weights of the labels to decide about the labels to put on the executor pods
+	// +optional
+	WeightedAffinities map[string]float64 `json:"weightedAffinities,omitempty"`
 	// NodeSelector is the Kubernetes node selector to be added to the driver and executor pods.
 	// This field is mutually exclusive with nodeSelector at podSpec level (driver or executor).
 	// This field will be deprecated in future versions (at SparkApplicationSpec level).

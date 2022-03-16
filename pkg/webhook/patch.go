@@ -18,6 +18,7 @@ package webhook
 
 import (
 	"fmt"
+	"math/rand"
 	"strings"
 
 	"github.com/golang/glog"
@@ -76,6 +77,11 @@ func patchSparkPod(pod *corev1.Pod, app *v1beta2.SparkApplication) []patchOperat
 		if op != nil {
 			patchOps = append(patchOps, *op)
 		}
+	}
+
+	if app.Spec.WeightedAffinities != nil {
+		op := addWeightedAffinities(pod, app)
+		patchOps = append(patchOps, *op)
 	}
 
 	op = addPodSecurityContext(pod, app)
@@ -478,6 +484,72 @@ func addAffinity(pod *corev1.Pod, app *v1beta2.SparkApplication) *patchOperation
 	if affinity == nil {
 		return nil
 	}
+	return &patchOperation{Op: "add", Path: "/spec/affinity", Value: *affinity}
+}
+
+func addWeightedAffinities(pod *corev1.Pod, app *v1beta2.SparkApplication) *patchOperation {
+	totalWeight := 0.0
+	var labels []string
+
+	// this logic only applies to executors
+	if util.IsDriverPod(pod) {
+		return nil
+	}
+
+	if len(app.Spec.WeightedAffinities) != 2 {
+		glog.Warningf("weightedAffinities must have one key for the on-demand label and one for the spot one")
+		return nil
+	}
+
+	for label, weight := range app.Spec.WeightedAffinities {
+		totalWeight += weight
+		labels = append(labels, label)
+		glog.Infof("Discovered label for the weighted affinity: %s. Weight: %f", label, weight)
+	}
+
+	if totalWeight > 1.0 || totalWeight < 0 {
+		glog.Warningf("the sum of the weights for the weighted affinities must be in the interval [0,1]")
+		return nil
+	}
+
+	randValue := rand.Float64()
+	glog.Infof("Generated random number to choose the weighted affinity label: %f", randValue)
+
+	choosenLabel := labels[0]
+	choosenWeight, _ := app.Spec.WeightedAffinities[choosenLabel]
+
+	if randValue > choosenWeight {
+		choosenLabel = labels[1]
+		choosenWeight, _ = app.Spec.WeightedAffinities[choosenLabel]
+	}
+
+	glog.Infof("Choosen affinity label (weight: %f) for the executor %s is %s", choosenWeight, pod.GetObjectMeta().GetName(), choosenLabel)
+
+	nodeSelectorRequirements := corev1.NodeSelectorRequirement{
+		Key:      "role",
+		Operator: corev1.NodeSelectorOpIn,
+		Values:   []string{choosenLabel},
+	}
+
+	preferredSchedulingTerms := corev1.PreferredSchedulingTerm{
+		Weight: 1,
+		Preference: corev1.NodeSelectorTerm{
+			MatchExpressions: []corev1.NodeSelectorRequirement{
+				nodeSelectorRequirements,
+			},
+		},
+	}
+
+	preferredDuringSchedulingIgnoredDuringExecutions := []corev1.PreferredSchedulingTerm{
+		preferredSchedulingTerms,
+	}
+
+	affinity := &corev1.Affinity{
+		NodeAffinity: &corev1.NodeAffinity{
+			PreferredDuringSchedulingIgnoredDuringExecution: preferredDuringSchedulingIgnoredDuringExecutions,
+		},
+	}
+
 	return &patchOperation{Op: "add", Path: "/spec/affinity", Value: *affinity}
 }
 
