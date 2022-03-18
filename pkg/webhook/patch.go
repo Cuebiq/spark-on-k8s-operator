@@ -80,8 +80,9 @@ func patchSparkPod(pod *corev1.Pod, app *v1beta2.SparkApplication) []patchOperat
 	}
 
 	if app.Spec.WeightedAffinities != nil {
-		op := addWeightedAffinities(pod, app)
-		patchOps = append(patchOps, *op)
+		if op := addWeightedAffinities(pod, app); op != nil {
+			patchOps = append(patchOps, *op)
+		}
 	}
 
 	op = addPodSecurityContext(pod, app)
@@ -531,8 +532,10 @@ func addWeightedAffinities(pod *corev1.Pod, app *v1beta2.SparkApplication) *patc
 		Values:   []string{choosenLabel},
 	}
 
+	/* uncomment this code if you want to use the "soft" policy for the node affinity
+	glog.Info("Enforcing the policy PreferredDuringSchedulingIgnoredDuringExecution for the selected affinity. Choosen scheduling weight is 1")
 	preferredSchedulingTerms := corev1.PreferredSchedulingTerm{
-		Weight: 1,
+		Weight: 1, // this parameter (can be in the interval [1-100]) controls how strict the scheduling policy must be, 1 = best effort | 100 = super strict
 		Preference: corev1.NodeSelectorTerm{
 			MatchExpressions: []corev1.NodeSelectorRequirement{
 				nodeSelectorRequirements,
@@ -547,6 +550,23 @@ func addWeightedAffinities(pod *corev1.Pod, app *v1beta2.SparkApplication) *patc
 	affinity := &corev1.Affinity{
 		NodeAffinity: &corev1.NodeAffinity{
 			PreferredDuringSchedulingIgnoredDuringExecution: preferredDuringSchedulingIgnoredDuringExecutions,
+		},
+	}*/
+
+	glog.Info("Enforcing the policy RequiredDuringSchedulingIgnoredDuringExecution for the selected affinity")
+	nodeSelectorTerms := []corev1.NodeSelectorTerm{
+		{
+			MatchExpressions: []corev1.NodeSelectorRequirement{
+				nodeSelectorRequirements,
+			},
+		},
+	}
+
+	affinity := &corev1.Affinity{
+		NodeAffinity: &corev1.NodeAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+				NodeSelectorTerms: nodeSelectorTerms,
+			},
 		},
 	}
 

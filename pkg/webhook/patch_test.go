@@ -401,7 +401,9 @@ func TestPatchSparkPod_WeightedAffinities(t *testing.T) {
 
 	// be sure affinity is set
 	assert.True(t, modifiedPod.Spec.Affinity != nil)
-	assert.True(t, modifiedPod.Spec.Affinity.NodeAffinity != nil) // PreferredDuringSchedulingIgnoredDuringExecution
+	assert.True(t, modifiedPod.Spec.Affinity.NodeAffinity != nil)
+
+	/* uncomment this when the PreferredDuringSchedulingIgnoredDuringExecution is used
 	assert.True(t, modifiedPod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution != nil)
 	assert.True(t, len(modifiedPod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution) == 1)
 
@@ -409,6 +411,16 @@ func TestPatchSparkPod_WeightedAffinities(t *testing.T) {
 	schedulingTerm := modifiedPod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution[0]
 	assert.True(t, schedulingTerm.Preference.MatchExpressions != nil)
 	matchExpressions := schedulingTerm.Preference.MatchExpressions
+	assert.True(t, len(matchExpressions) == 1)
+	nodeSelectorRequirements := matchExpressions[0]
+	*/
+
+	// test for RequiredDuringSchedulingIgnoredDuringExecution policy
+	assert.True(t, modifiedPod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution != nil)
+	nodeSelectorTerms := modifiedPod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms
+	assert.True(t, nodeSelectorTerms != nil)
+	assert.True(t, len(nodeSelectorTerms) == 1)
+	matchExpressions := nodeSelectorTerms[0].MatchExpressions
 	assert.True(t, len(matchExpressions) == 1)
 	nodeSelectorRequirements := matchExpressions[0]
 
