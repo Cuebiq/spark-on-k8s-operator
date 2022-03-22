@@ -508,7 +508,7 @@ func addWeightedAffinities(pod *corev1.Pod, app *v1beta2.SparkApplication) *patc
 		glog.Infof("Discovered label for the weighted affinity: %s. Weight: %f", label, weight)
 	}
 
-	if totalWeight != 0 {
+	if totalWeight != 1.0 {
 		glog.Warningf("the sum of the weights for the weighted affinities must be 1.0")
 		return nil
 	}
