@@ -18,6 +18,7 @@ package webhook
 
 import (
 	"fmt"
+	"math/rand"
 	"strings"
 
 	"github.com/golang/glog"
@@ -74,6 +75,12 @@ func patchSparkPod(pod *corev1.Pod, app *v1beta2.SparkApplication) []patchOperat
 	if pod.Spec.Affinity == nil {
 		op := addAffinity(pod, app)
 		if op != nil {
+			patchOps = append(patchOps, *op)
+		}
+	}
+
+	if app.Spec.WeightedAffinities != nil {
+		if op := addWeightedAffinities(pod, app); op != nil {
 			patchOps = append(patchOps, *op)
 		}
 	}
@@ -478,6 +485,91 @@ func addAffinity(pod *corev1.Pod, app *v1beta2.SparkApplication) *patchOperation
 	if affinity == nil {
 		return nil
 	}
+	return &patchOperation{Op: "add", Path: "/spec/affinity", Value: *affinity}
+}
+
+func addWeightedAffinities(pod *corev1.Pod, app *v1beta2.SparkApplication) *patchOperation {
+	totalWeight := 0.0
+	var labels []string
+
+	// this logic only applies to executors
+	if util.IsDriverPod(pod) {
+		return nil
+	}
+
+	if len(app.Spec.WeightedAffinities) != 2 {
+		glog.Warningf("weightedAffinities must have one key for the on-demand label and one for the spot one")
+		return nil
+	}
+
+	for label, weight := range app.Spec.WeightedAffinities {
+		totalWeight += weight
+		labels = append(labels, label)
+		glog.Infof("Discovered label for the weighted affinity: %s. Weight: %f", label, weight)
+	}
+
+	if totalWeight != 1.0 {
+		glog.Warningf("the sum of the weights for the weighted affinities must be 1.0")
+		return nil
+	}
+
+	randValue := rand.Float64()
+	glog.Infof("Generated random number to choose the weighted affinity label: %f", randValue)
+
+	choosenLabel := labels[0]
+	choosenWeight, _ := app.Spec.WeightedAffinities[choosenLabel]
+
+	if randValue > choosenWeight {
+		choosenLabel = labels[1]
+		choosenWeight, _ = app.Spec.WeightedAffinities[choosenLabel]
+	}
+
+	glog.Infof("Choosen affinity label (weight: %f) for the executor %s is %s", choosenWeight, pod.GetObjectMeta().GetName(), choosenLabel)
+
+	nodeSelectorRequirements := corev1.NodeSelectorRequirement{
+		Key:      "role",
+		Operator: corev1.NodeSelectorOpIn,
+		Values:   []string{choosenLabel},
+	}
+
+	/* uncomment this code if you want to use the "soft" policy for the node affinity
+	glog.Info("Enforcing the policy PreferredDuringSchedulingIgnoredDuringExecution for the selected affinity. Choosen scheduling weight is 1")
+	preferredSchedulingTerms := corev1.PreferredSchedulingTerm{
+		Weight: 1, // this parameter (can be in the interval [1-100]) controls how strict the scheduling policy must be, 1 = best effort | 100 = super strict
+		Preference: corev1.NodeSelectorTerm{
+			MatchExpressions: []corev1.NodeSelectorRequirement{
+				nodeSelectorRequirements,
+			},
+		},
+	}
+
+	preferredDuringSchedulingIgnoredDuringExecutions := []corev1.PreferredSchedulingTerm{
+		preferredSchedulingTerms,
+	}
+
+	affinity := &corev1.Affinity{
+		NodeAffinity: &corev1.NodeAffinity{
+			PreferredDuringSchedulingIgnoredDuringExecution: preferredDuringSchedulingIgnoredDuringExecutions,
+		},
+	}*/
+
+	glog.Info("Enforcing the policy RequiredDuringSchedulingIgnoredDuringExecution for the selected affinity")
+	nodeSelectorTerms := []corev1.NodeSelectorTerm{
+		{
+			MatchExpressions: []corev1.NodeSelectorRequirement{
+				nodeSelectorRequirements,
+			},
+		},
+	}
+
+	affinity := &corev1.Affinity{
+		NodeAffinity: &corev1.NodeAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+				NodeSelectorTerms: nodeSelectorTerms,
+			},
+		},
+	}
+
 	return &patchOperation{Op: "add", Path: "/spec/affinity", Value: *affinity}
 }
 

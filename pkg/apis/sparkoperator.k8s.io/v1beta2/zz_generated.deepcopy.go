@@ -709,6 +709,13 @@ func (in *SparkApplicationSpec) DeepCopyInto(out *SparkApplicationSpec) {
 	in.Executor.DeepCopyInto(&out.Executor)
 	in.Deps.DeepCopyInto(&out.Deps)
 	in.RestartPolicy.DeepCopyInto(&out.RestartPolicy)
+	if in.WeightedAffinities != nil {
+		in, out := &in.WeightedAffinities, &out.WeightedAffinities
+		*out = make(map[string]float64, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	if in.NodeSelector != nil {
 		in, out := &in.NodeSelector, &out.NodeSelector
 		*out = make(map[string]string, len(*in))
